@@ -5,10 +5,28 @@ from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 
 app = FastAPI(title="Nebula Chat", version="1.0.0")
+
+# ─────────────────────────────────────────────
+# CORS — Allow requests from GitHub Pages frontend
+# and localhost for dev. Add your GitHub Pages URL below.
+# ─────────────────────────────────────────────
+ALLOWED_ORIGINS = os.environ.get(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8000,http://localhost:3000,http://127.0.0.1:8000"
+).split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,   # set via env var on Railway
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ─────────────────────────────────────────────
 # Database Setup
