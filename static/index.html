@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nebula Chat — Unified Messaging</title>
+    <meta name="description" content="Nebula Chat — a private and public chat app with a sleek matte design.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <!-- ====== Login Overlay ====== -->
+    <div id="login-overlay" class="overlay active">
+        <div class="login-box">
+            <!-- Brand -->
+            <div class="login-brand">
+                <div class="login-logo">
+                    <!-- Chat bubble icon -->
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                </div>
+                <h2 class="title-font brand-text">Nebula</h2>
+            </div>
+            <p class="subtitle">Enter your display name to start chatting</p>
+
+            <form id="login-form">
+                <div class="input-group">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    <input type="text" id="username-input" placeholder="Your display name" autocomplete="off" required maxlength="30">
+                </div>
+                <button type="submit" id="login-btn" class="btn-primary">Enter Chat &rarr;</button>
+            </form>
+            <p class="login-footer">No sign-up required &bull; No passwords &bull; Just your name</p>
+        </div>
+    </div>
+
+    <!-- ====== Main Dashboard ====== -->
+    <div class="dashboard-container" id="dashboard" style="display: none;">
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-block">
+                    <div class="logo-icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                    </div>
+                    <h2 class="title-font brand-text">Nebula</h2>
+                </div>
+                <!-- Current user pill -->
+                <div class="current-user-tag">
+                    <div class="user-dot" id="user-dot-initial">?</div>
+                    <span id="current-user-display"></span>
+                </div>
+            </div>
+
+            <div class="sidebar-content">
+                <!-- Public Room (pinned) -->
+                <div class="category-header">Public</div>
+                <div class="user-item public-room active" id="global-room-btn">
+                    <div class="user-avatar public-avatar">
+                        <svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor" stroke-width="2" fill="none">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="2" y1="12" x2="22" y2="12"/>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                        </svg>
+                    </div>
+                    <span>Global Room</span>
+                </div>
+
+                <!-- DMs -->
+                <div class="category-header mt-4">Direct Messages</div>
+                <div class="user-list" id="users-container">
+                    <div class="list-placeholder">Searching for others...</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+
+            <!-- Empty state placeholder -->
+            <div id="no-chat-selected" class="no-chat-selected">
+                <div class="empty-state">
+                    <div class="icon-circle">
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                    </div>
+                    <h3 class="title-font">Select a conversation</h3>
+                    <p>Choose the Global Room or a direct message to start.</p>
+                </div>
+            </div>
+
+            <!-- Active Chat -->
+            <div id="active-chat" class="active-chat active">
+
+                <!-- Chat Header -->
+                <header class="chat-header">
+                    <div class="chat-header-left">
+                        <div class="chat-avatar-lg public" id="chat-header-avatar">
+                            <!-- Dynamically set -->
+                            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="2" y1="12" x2="22" y2="12"/>
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                            </svg>
+                        </div>
+                        <div class="chat-header-info">
+                            <h1 id="chat-partner-name" class="title-font">Global Room</h1>
+                            <span id="chat-context-badge" class="badge public">Public</span>
+                        </div>
+                    </div>
+                    <div class="chat-header-right">
+                        <div class="status">
+                            <div class="status-dot" id="status-indicator"></div>
+                            <span id="status-text">Connecting...</span>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Messages -->
+                <div class="messages-container" id="messages-container"></div>
+
+                <!-- Message Input -->
+                <form class="message-form" id="message-form">
+                    <div class="input-wrapper">
+                        <input
+                            type="text"
+                            id="message-input"
+                            placeholder="Message the Global Room..."
+                            autocomplete="off"
+                            required
+                        >
+                        <button type="submit" id="send-button" aria-label="Send message">
+                            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.2" fill="none">
+                                <line x1="22" y1="2" x2="11" y2="13"/>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                            </svg>
+                        </button>
+                    </div>
+                </form>
+
+            </div><!-- /active-chat -->
+        </main>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
