@@ -6,7 +6,7 @@
 
 // ⚠️  REPLACE THIS with your Railway app URL (no trailing slash)
 // Example: "https://nebula-chat-production.up.railway.app"
-const RAILWAY_URL = "https://YOUR-APP.up.railway.app";
+const RAILWAY_URL = "https://web-production-a28257.up.railway.app";
 
 const GLOBAL_ROOM_ID = "GLOBAL_ROOM";
 
