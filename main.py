@@ -15,14 +15,9 @@ app = FastAPI(title="Nebula Chat", version="1.0.0")
 # CORS — Allow requests from GitHub Pages frontend
 # and localhost for dev. Add your GitHub Pages URL below.
 # ─────────────────────────────────────────────
-ALLOWED_ORIGINS = os.environ.get(
-    "ALLOWED_ORIGINS",
-    "http://localhost:8000,http://localhost:3000,http://127.0.0.1:8000,https://onelimestudio.github.io"
-).split(",")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,   # set via env var on Railway
+    allow_origin_regex=".*",   # Allow all origins safely
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,9 +52,17 @@ def init_db():
             sender    TEXT,
             recipient TEXT,
             content   TEXT,
+            type      TEXT DEFAULT 'text',
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # Handle existing databases that might not have the 'type' column
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN type TEXT DEFAULT 'text'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
     conn.commit()
     conn.close()
 
@@ -126,21 +129,21 @@ async def get_messages(user1: str, user2: str):
 
     if user2 == "GLOBAL_ROOM":
         cursor.execute('''
-            SELECT sender, recipient, content, timestamp FROM messages
+            SELECT sender, recipient, content, type, timestamp FROM messages
             WHERE recipient = 'GLOBAL_ROOM'
             ORDER BY timestamp ASC
             LIMIT 200
         ''')
     else:
         cursor.execute('''
-            SELECT sender, recipient, content, timestamp FROM messages
+            SELECT sender, recipient, content, type, timestamp FROM messages
             WHERE (sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)
             ORDER BY timestamp ASC
             LIMIT 200
         ''', (user1, user2, user2, user1))
 
     messages = [
-        {"sender": row[0], "recipient": row[1], "content": row[2], "timestamp": row[3]}
+        {"sender": row[0], "recipient": row[1], "content": row[2], "type": row[3], "timestamp": row[4]}
         for row in cursor.fetchall()
     ]
     conn.close()
@@ -178,6 +181,7 @@ class ConnectionManager:
         for u in dead:
             self.disconnect(u)
 
+# Create instance
 manager = ConnectionManager()
 
 # ─────────────────────────────────────────────
@@ -193,6 +197,7 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
                 data      = json.loads(data_str)
                 recipient = data.get("recipient")
                 content   = data.get("content", "").strip()
+                msg_type  = data.get("type", "text")
 
                 if not recipient or not content:
                     continue
@@ -201,9 +206,9 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
                 conn   = get_db()
                 cursor = conn.cursor()
                 cursor.execute('''
-                    INSERT INTO messages (sender, recipient, content)
-                    VALUES (?, ?, ?)
-                ''', (username, recipient, content))
+                    INSERT INTO messages (sender, recipient, content, type)
+                    VALUES (?, ?, ?, ?)
+                ''', (username, recipient, content, msg_type))
                 conn.commit()
                 cursor.execute('SELECT timestamp FROM messages WHERE id = last_insert_rowid()')
                 timestamp = cursor.fetchone()[0]
@@ -213,6 +218,7 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
                     "sender":    username,
                     "recipient": recipient,
                     "content":   content,
+                    "type":      msg_type,
                     "timestamp": timestamp
                 })
 

@@ -37,6 +37,7 @@ const statusText         = document.getElementById('status-text');
 const messagesContainer  = document.getElementById('messages-container');
 const messageForm        = document.getElementById('message-form');
 const messageInput       = document.getElementById('message-input');
+const imageInput         = document.getElementById('image-input');
 
 
 // ===================================================
@@ -195,7 +196,18 @@ function renderMessage(msg) {
 
     const bubble = document.createElement('div');
     bubble.className = 'msg-bubble';
-    bubble.textContent = msg.content;
+    
+    if (msg.type === 'image') {
+        bubble.classList.add('image-bubble');
+        const img = document.createElement('img');
+        img.src = msg.content;
+        img.alt = "Shared image";
+        img.loading = "lazy";
+        bubble.appendChild(img);
+    } else {
+        bubble.textContent = msg.content;
+    }
+    
     wrapper.appendChild(bubble);
 
     if (msg.timestamp) {
@@ -262,13 +274,43 @@ messageForm.addEventListener('submit', (e) => {
     const text = messageInput.value.trim();
     if (!text || !selectedUser) return;
 
+    sendMessage(text, 'text');
+    messageInput.value = '';
+    messageInput.focus();
+});
+
+function sendMessage(content, type) {
+    if (!selectedUser) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ recipient: selectedUser, content: text }));
-        messageInput.value = '';
-        messageInput.focus();
+        ws.send(JSON.stringify({ recipient: selectedUser, content: content, type: type }));
     } else {
         alert("Not connected. Please wait...");
     }
+}
+
+imageInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+        alert("Please select an image file.");
+        return;
+    }
+
+    // Limit to 5MB for base64 safety
+    if (file.size > 5 * 1024 * 1024) {
+        alert("Image too large (max 5MB)");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const dataUrl = event.target.result;
+        sendMessage(dataUrl, 'image');
+        // Clear input
+        imageInput.value = '';
+    };
+    reader.readAsDataURL(file);
 });
 
 window.onload = () => usernameInput.focus();
