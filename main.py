@@ -162,10 +162,10 @@ async def search_groups(query: str = ""):
     conn = get_db()
     cursor = conn.cursor()
     if query:
-        cursor.execute('SELECT id, name FROM groups WHERE name LIKE ? ORDER BY name ASC', (f'%{query}%',))
+        cursor.execute('SELECT id, name, creator FROM groups WHERE name LIKE ? ORDER BY name ASC', (f'%{query}%',))
     else:
-        cursor.execute('SELECT id, name FROM groups ORDER BY name ASC')
-    groups = [{"id": row[0], "name": row[1]} for row in cursor.fetchall()]
+        cursor.execute('SELECT id, name, creator FROM groups ORDER BY name ASC')
+    groups = [{"id": row[0], "name": row[1], "creator": row[2]} for row in cursor.fetchall()]
     conn.close()
     return {"groups": groups}
 
@@ -174,11 +174,11 @@ async def get_user_groups(username: str):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT g.id, g.name FROM groups g
+        SELECT g.id, g.name, g.creator FROM groups g
         JOIN group_members gm ON g.id = gm.group_id
         WHERE gm.username = ?
     ''', (username,))
-    groups = [{"id": row[0], "name": row[1]} for row in cursor.fetchall()]
+    groups = [{"id": row[0], "name": row[1], "creator": row[2]} for row in cursor.fetchall()]
     conn.close()
     return {"groups": groups}
 
@@ -194,6 +194,27 @@ async def join_group(group_id: int, username: str):
     conn.close()
     return {"message": "Joined group"}
 
+@app.delete("/api/groups/{group_id}")
+async def delete_group(group_id: int, username: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    # Check if user is the creator
+    cursor.execute('SELECT creator FROM groups WHERE id = ?', (group_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Group not found")
+    if row[0] != username:
+        conn.close()
+        raise HTTPException(status_code=403, detail="Only the creator can delete the group")
+    
+    cursor.execute('DELETE FROM group_members WHERE group_id = ?', (group_id,))
+    cursor.execute('DELETE FROM groups WHERE id = ?', (group_id,))
+    cursor.execute("DELETE FROM messages WHERE recipient = ?", (f"GROUP_{group_id}",))
+    conn.commit()
+    conn.close()
+    return {"message": "Group deleted"}
+
 # ─────────────────────────────────────────────
 # API: Messages History
 # ─────────────────────────────────────────────
@@ -204,7 +225,7 @@ async def get_messages(user1: str, user2: str):
 
     if user2 == "GLOBAL_ROOM":
         cursor.execute('''
-            SELECT sender, recipient, content, type, timestamp FROM messages
+            SELECT id, sender, recipient, content, type, timestamp FROM messages
             WHERE recipient = 'GLOBAL_ROOM'
             ORDER BY timestamp ASC
             LIMIT 200
@@ -212,25 +233,43 @@ async def get_messages(user1: str, user2: str):
     elif user2.startswith("GROUP_"):
         group_id = user2.replace("GROUP_", "")
         cursor.execute('''
-            SELECT sender, recipient, content, type, timestamp FROM messages
+            SELECT id, sender, recipient, content, type, timestamp FROM messages
             WHERE recipient = ?
             ORDER BY timestamp ASC
             LIMIT 200
         ''', (user2,))
     else:
         cursor.execute('''
-            SELECT sender, recipient, content, type, timestamp FROM messages
+            SELECT id, sender, recipient, content, type, timestamp FROM messages
             WHERE (sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)
             ORDER BY timestamp ASC
             LIMIT 200
         ''', (user1, user2, user2, user1))
 
     messages = [
-        {"sender": row[0], "recipient": row[1], "content": row[2], "type": row[3], "timestamp": row[4]}
+        {"id": row[0], "sender": row[1], "recipient": row[2], "content": row[3], "type": row[4], "timestamp": row[5]}
         for row in cursor.fetchall()
     ]
     conn.close()
     return {"messages": messages}
+
+@app.delete("/api/messages/{message_id}")
+async def delete_message(message_id: int, username: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT sender FROM messages WHERE id = ?', (message_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Message not found")
+    if row[0] != username:
+        conn.close()
+        raise HTTPException(status_code=403, detail="You can only delete your own messages")
+    
+    cursor.execute('DELETE FROM messages WHERE id = ?', (message_id,))
+    conn.commit()
+    conn.close()
+    return {"message": "Message deleted"}
 
 # ─────────────────────────────────────────────
 # WebSocket – Connection Manager
@@ -298,6 +337,7 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
                 conn.close()
 
                 payload = json.dumps({
+                    "id":        cursor.lastrowid if 'cursor' in locals() else None,
                     "sender":    username,
                     "recipient": recipient,
                     "content":   content,

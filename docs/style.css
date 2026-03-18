@@ -673,6 +673,34 @@ body {
     box-shadow: 0 3px 12px rgba(200,120,90,0.25);
 }
 
+.message.self .msg-bubble-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 8px;
+}
+
+.delete-msg-btn {
+    opacity: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: opacity 0.2s, color 0.2s, background 0.2s;
+}
+
+.message.self:hover .delete-msg-btn {
+    opacity: 1;
+}
+
+.delete-msg-btn:hover {
+    color: #e57373;
+    background: rgba(229, 115, 115, 0.1);
+}
+
 .msg-time {
     font-size: 0.64rem;
     color: var(--text-muted);
@@ -682,6 +710,27 @@ body {
 .message:hover .msg-time { opacity: 1; }
 .message.self  .msg-time { text-align: right; margin-right: 6px; }
 .message.other .msg-time { margin-left: 6px; }
+
+/* Group Delete Button */
+.btn-delete {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    padding: 8px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-delete:hover {
+    color: #e57373;
+    border-color: #e57373;
+    background: rgba(229, 115, 115, 0.1);
+    transform: scale(1.05);
+}
 
 /* Image Bubble Styles */
 .msg-bubble.image-bubble {

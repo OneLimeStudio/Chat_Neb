@@ -47,6 +47,7 @@ const messagesContainer = document.getElementById('messages-container');
 const messageForm       = document.getElementById('message-form');
 const messageInput      = document.getElementById('message-input');
 const imageInput        = document.getElementById('image-input');
+const deleteGroupBtn    = document.getElementById('delete-group-btn');
 
 
 // ===================================================
@@ -290,6 +291,16 @@ async function selectUser(id, displayName = null) {
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
                 <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
             </svg>`;
+        
+        // Show delete button only to creator
+        const groupId = id.replace("GROUP_", "");
+        const group = groupsList.find(g => g.id == groupId);
+        if (group && group.creator === currentUser) {
+            deleteGroupBtn.style.display = 'flex';
+            deleteGroupBtn.onclick = () => deleteGroup(groupId);
+        } else {
+            deleteGroupBtn.style.display = 'none';
+        }
     } else {
         chatPartnerName.textContent = id;
         chatContextBadge.textContent = "Direct";
@@ -298,6 +309,7 @@ async function selectUser(id, displayName = null) {
         chatHeaderAvatar.className = "chat-avatar-lg private";
         chatHeaderAvatar.textContent = id.charAt(0).toUpperCase();
         chatHeaderAvatar.innerHTML = '';
+        deleteGroupBtn.style.display = 'none';
     }
 
     loadChatHistory();
@@ -350,6 +362,10 @@ function renderMessage(msg) {
         wrapper.appendChild(senderSpan);
     }
 
+    // Bubble wrapper
+    const bubbleWrapper = document.createElement('div');
+    bubbleWrapper.className = 'msg-bubble-wrapper';
+
     // Bubble
     const bubble = document.createElement('div');
     bubble.className = 'msg-bubble';
@@ -365,7 +381,23 @@ function renderMessage(msg) {
         bubble.textContent = msg.content;
     }
     
-    wrapper.appendChild(bubble);
+    bubbleWrapper.appendChild(bubble);
+
+    // Delete button for self
+    if (isSelf && msg.id) {
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-msg-btn';
+        delBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>`;
+        delBtn.title = "Delete Message";
+        delBtn.onclick = () => deleteMessage(msg.id);
+        bubbleWrapper.appendChild(delBtn);
+    }
+
+    wrapper.appendChild(bubbleWrapper);
 
     // Timestamp
     if (msg.timestamp) {
@@ -470,6 +502,39 @@ imageInput.addEventListener('change', (e) => {
     };
     reader.readAsDataURL(file);
 });
+
+
+async function deleteMessage(messageId) {
+    if (!confirm("Are you sure you want to delete this message?")) return;
+    try {
+        const res = await fetch(`${RAILWAY_URL}/api/messages/${messageId}?username=${encodeURIComponent(currentUser)}`, {
+            method: 'DELETE'
+        });
+        if (res.ok) {
+            loadChatHistory();
+        }
+    } catch (err) {
+        console.error("Error deleting message:", err);
+    }
+}
+
+async function deleteGroup(groupId) {
+    if (!confirm("Are you sure you want to delete this group? All its messages will be lost.")) return;
+    try {
+        const res = await fetch(`${RAILWAY_URL}/api/groups/${groupId}?username=${encodeURIComponent(currentUser)}`, {
+            method: 'DELETE'
+        });
+        if (res.ok) {
+            selectUser(GLOBAL_ROOM_ID);
+            fetchGroups();
+        } else {
+            const data = await res.json();
+            alert(data.detail || "Failed to delete group");
+        }
+    } catch (err) {
+        console.error("Error deleting group:", err);
+    }
+}
 
 
 // ===================================================
