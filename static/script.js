@@ -43,6 +43,7 @@ const messageForm       = document.getElementById('message-form');
 const messageInput      = document.getElementById('message-input');
 const imageInput        = document.getElementById('image-input');
 const deleteGroupBtn    = document.getElementById('delete-group-btn');
+const addMemberBtn       = document.getElementById('add-member-btn');
 
 
 // ===================================================
@@ -293,8 +294,16 @@ async function selectUser(id, displayName = null) {
         if (group && group.creator === currentUser) {
             deleteGroupBtn.style.display = 'flex';
             deleteGroupBtn.onclick = () => deleteGroup(groupId);
+            addMemberBtn.style.display = 'flex';
+            addMemberBtn.onclick = async () => {
+                const usernameInput = prompt("Enter username to add to group:");
+                if (usernameInput && usernameInput.trim()) {
+                    await addMemberToGroup(groupId, usernameInput.trim());
+                }
+            };
         } else {
             deleteGroupBtn.style.display = 'none';
+            addMemberBtn.style.display = 'none';
         }
     } else {
         chatPartnerName.textContent = id;
@@ -305,6 +314,7 @@ async function selectUser(id, displayName = null) {
         chatHeaderAvatar.textContent = id.charAt(0).toUpperCase();
         chatHeaderAvatar.innerHTML = '';
         deleteGroupBtn.style.display = 'none';
+        addMemberBtn.style.display = 'none';
     }
 
     loadChatHistory();
@@ -529,6 +539,22 @@ async function deleteGroup(groupId) {
         }
     } catch (err) {
         console.error("Error deleting group:", err);
+    }
+}
+
+async function addMemberToGroup(groupId, username) {
+    try {
+        const res = await fetch(`/api/groups/${groupId}/join?username=${encodeURIComponent(username)}`, {
+            method: 'POST'
+        });
+        if (res.ok) {
+            alert(`User ${username} added to the group!`);
+        } else {
+            const data = await res.json();
+            alert(data.detail || `Failed to add user ${username}`);
+        }
+    } catch (err) {
+        console.error("Error adding member:", err);
     }
 }
 
