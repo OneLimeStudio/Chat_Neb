@@ -9,6 +9,8 @@ let currentUser   = null;
 let selectedUser  = GLOBAL_ROOM_ID;
 let ws            = null;
 let usersList     = [];
+let groupsList    = [];
+let searchQuery   = "";
 
 // --- DOM ---
 const loginOverlay      = document.getElementById('login-overlay');
@@ -19,7 +21,15 @@ const dashboard         = document.getElementById('dashboard');
 const currentUserDisplay= document.getElementById('current-user-display');
 const userDotInitial    = document.getElementById('user-dot-initial');
 const usersContainer    = document.getElementById('users-container');
+const groupsContainer   = document.getElementById('groups-container');
 const globalRoomBtn     = document.getElementById('global-room-btn');
+const userSearchInput   = document.getElementById('user-search');
+
+const groupModal        = document.getElementById('group-modal');
+const showCreateGroupBtn= document.getElementById('show-create-group');
+const closeGroupModalBtn= document.getElementById('close-group-modal');
+const createGroupForm   = document.getElementById('create-group-form');
+const groupNameInput    = document.getElementById('group-name-input');
 
 const activeChatView    = document.getElementById('active-chat');
 const noChatView        = document.getElementById('no-chat-selected');
@@ -64,7 +74,11 @@ loginForm.addEventListener('submit', async (e) => {
                 // connect & load
                 connectWebSocket();
                 fetchUsers();
-                setInterval(fetchUsers, 5000);
+                fetchGroups();
+                setInterval(() => {
+                    fetchUsers();
+                    fetchGroups();
+                }, 5000);
                 selectUser(GLOBAL_ROOM_ID);
             }, 500);
         } else {
@@ -79,12 +93,20 @@ loginForm.addEventListener('submit', async (e) => {
 
 
 // ===================================================
-// 2. USERS LIST & SELECTION
+// 2. USERS, GROUPS & SELECTION
 // ===================================================
+
+// Search Logic
+userSearchInput.addEventListener('input', (e) => {
+    searchQuery = e.target.value.toLowerCase().trim();
+    renderUserList();
+    renderGroupList();
+});
+
 async function fetchUsers() {
     if (!currentUser) return;
     try {
-        const res  = await fetch('/api/users');
+        const res  = await fetch(`/api/users?query=${encodeURIComponent(searchQuery)}`);
         const data = await res.json();
         usersList  = data.users.filter(u => u !== currentUser);
         renderUserList();
@@ -93,14 +115,49 @@ async function fetchUsers() {
     }
 }
 
+async function fetchGroups() {
+    if (!currentUser) return;
+    try {
+        // Fetch groups I'm a member of
+        const resUser  = await fetch(`/api/groups/user/${encodeURIComponent(currentUser)}`);
+        const dataUser = await resUser.json();
+        const myGroups = dataUser.groups;
+        
+        let allMatchingGroups = [];
+        if (searchQuery) {
+            // Also search for groups by name
+            const resAll = await fetch(`/api/groups?query=${encodeURIComponent(searchQuery)}`);
+            const dataAll = await resAll.json();
+            allMatchingGroups = dataAll.groups;
+        }
+
+        // Merge and mark membership
+        groupsList = myGroups.map(g => ({ ...g, isMember: true }));
+        
+        allMatchingGroups.forEach(g => {
+            if (!groupsList.find(mg => mg.id === g.id)) {
+                groupsList.push({ ...g, isMember: false });
+            }
+        });
+
+        renderGroupList();
+    } catch (err) {
+        console.error("Error fetching groups:", err);
+    }
+}
+
 function renderUserList() {
-    if (usersList.length === 0) {
-        usersContainer.innerHTML = `<div class="list-placeholder">No other users yet.<br>Share the link to invite someone!</div>`;
+    const filteredUsers = searchQuery 
+        ? usersList.filter(u => u.toLowerCase().includes(searchQuery))
+        : usersList;
+
+    if (filteredUsers.length === 0) {
+        usersContainer.innerHTML = `<div class="list-placeholder">${searchQuery ? 'No users found.' : 'No other users yet.'}</div>`;
         return;
     }
 
     usersContainer.innerHTML = '';
-    usersList.forEach(user => {
+    filteredUsers.forEach(user => {
         const div    = document.createElement('div');
         div.className = `user-item ${selectedUser === user ? 'active' : ''}`;
 
@@ -118,22 +175,96 @@ function renderUserList() {
     });
 }
 
+function renderGroupList() {
+    const filteredGroups = searchQuery 
+        ? groupsList.filter(g => g.name.toLowerCase().includes(searchQuery))
+        : groupsList;
+
+    if (filteredGroups.length === 0 && !searchQuery) {
+        groupsContainer.innerHTML = `<div class="list-placeholder">No groups yet.</div>`;
+        return;
+    }
+
+    groupsContainer.innerHTML = '';
+    filteredGroups.forEach(group => {
+        const groupId = `GROUP_${group.id}`;
+        const div    = document.createElement('div');
+        div.className = `user-item ${selectedUser === groupId ? 'active' : ''}`;
+
+        const avatar    = document.createElement('div');
+        avatar.className = 'user-avatar group-avatar';
+        avatar.innerHTML = `
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>`;
+
+        const nameSpan    = document.createElement('span');
+        nameSpan.textContent = group.name;
+
+        div.appendChild(avatar);
+        div.appendChild(nameSpan);
+        div.onclick = () => selectUser(groupId, group.name);
+        groupsContainer.appendChild(div);
+    });
+}
+
+// Group Creation
+showCreateGroupBtn.onclick = () => groupModal.style.display = 'flex';
+closeGroupModalBtn.onclick = () => groupModal.style.display = 'none';
+
+createGroupForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const name = groupNameInput.value.trim();
+    if (!name) return;
+
+    try {
+        const res = await fetch('/api/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, creator: currentUser })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            groupModal.style.display = 'none';
+            groupNameInput.value = '';
+            fetchGroups();
+            selectUser(`GROUP_${data.id}`, data.name);
+        }
+    } catch (err) {
+        console.error("Error creating group:", err);
+    }
+};
+
 globalRoomBtn.onclick = () => selectUser(GLOBAL_ROOM_ID);
 
-async function selectUser(user) {
-    selectedUser = user;
+async function selectUser(id, displayName = null) {
+    selectedUser = id;
 
-    // Update sidebar active states
-    globalRoomBtn.classList.toggle('active', user === GLOBAL_ROOM_ID);
-    renderUserList();
+    // Handle group joining if not a member
+    if (id.startsWith("GROUP_")) {
+        const groupId = id.replace("GROUP_", "");
+        const group = groupsList.find(g => g.id == groupId);
+        if (group && !group.isMember) {
+            try {
+                await fetch(`/api/groups/${groupId}/join?username=${encodeURIComponent(currentUser)}`, {
+                    method: 'POST'
+                });
+                group.isMember = true;
+            } catch (err) {
+                console.error("Join group error:", err);
+            }
+        }
+    }
 
     // Update header
-    if (user === GLOBAL_ROOM_ID) {
+    if (id === GLOBAL_ROOM_ID) {
         chatPartnerName.textContent = "Global Room";
         chatContextBadge.textContent = "Public";
         chatContextBadge.className = "badge public";
         messageInput.placeholder = "Message the Global Room...";
-        // Header avatar — globe icon (public)
         chatHeaderAvatar.className = "chat-avatar-lg public";
         chatHeaderAvatar.innerHTML = `
             <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
@@ -141,14 +272,27 @@ async function selectUser(user) {
                 <line x1="2" y1="12" x2="22" y2="12"/>
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
             </svg>`;
+    } else if (id.startsWith("GROUP_")) {
+        chatPartnerName.textContent = displayName || "Group Chat";
+        chatContextBadge.textContent = "Group";
+        chatContextBadge.className = "badge public"; // Using teal for groups too
+        messageInput.placeholder = `Message group...`;
+        chatHeaderAvatar.className = "chat-avatar-lg public";
+        chatHeaderAvatar.innerHTML = `
+            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>`;
     } else {
-        chatPartnerName.textContent = user;
+        chatPartnerName.textContent = id;
         chatContextBadge.textContent = "Direct";
         chatContextBadge.className = "badge private";
-        messageInput.placeholder = `Message ${user}...`;
-        // Header avatar — initial letter (private)
+        messageInput.placeholder = `Message ${id}...`;
         chatHeaderAvatar.className = "chat-avatar-lg private";
-        chatHeaderAvatar.textContent = user.charAt(0).toUpperCase();
+        chatHeaderAvatar.textContent = id.charAt(0).toUpperCase();
+        chatHeaderAvatar.innerHTML = '';
     }
 
     loadChatHistory();
@@ -192,8 +336,9 @@ function renderMessage(msg) {
     const wrapper = document.createElement('div');
     wrapper.className = `message ${isSelf ? 'self' : 'other'}`;
 
-    // Sender name (visible for others in global room)
-    if (!isSelf && selectedUser === GLOBAL_ROOM_ID) {
+    // Sender name (visible for others in public rooms/groups)
+    const isPublicRecipient = selectedUser === GLOBAL_ROOM_ID || selectedUser.startsWith("GROUP_");
+    if (!isSelf && isPublicRecipient) {
         const senderSpan = document.createElement('span');
         senderSpan.className = 'msg-sender';
         senderSpan.textContent = msg.sender;
@@ -260,16 +405,11 @@ function connectWebSocket() {
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            // Route: global room message
-            if (selectedUser === GLOBAL_ROOM_ID && data.recipient === GLOBAL_ROOM_ID) {
-                renderMessage(data);
-            }
-            // Route: private chat message
-            else if (
-                selectedUser !== GLOBAL_ROOM_ID &&
-                ((data.sender === currentUser && data.recipient === selectedUser) ||
-                 (data.sender === selectedUser && data.recipient === currentUser))
-            ) {
+            // Route: current view check
+            const isMatch = (data.recipient === selectedUser) || 
+                          (selectedUser !== GLOBAL_ROOM_ID && !selectedUser.startsWith("GROUP_") && data.sender === selectedUser && data.recipient === currentUser);
+            
+            if (isMatch) {
                 renderMessage(data);
             }
             // else: message for another conversation — could add notification badge here

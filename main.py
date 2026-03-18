@@ -47,6 +47,23 @@ def init_db():
         )
     ''')
     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS groups (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            creator     TEXT,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS group_members (
+            group_id  INTEGER,
+            username  TEXT,
+            PRIMARY KEY (group_id, username),
+            FOREIGN KEY (group_id) REFERENCES groups(id),
+            FOREIGN KEY (username) REFERENCES users(username)
+        )
+    ''')
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS messages (
             id        INTEGER PRIMARY KEY AUTOINCREMENT,
             sender    TEXT,
@@ -111,13 +128,71 @@ async def login(req: LoginRequest):
     return {"message": "Logged in successfully", "username": username}
 
 @app.get("/api/users")
-async def get_users():
+async def get_users(query: str = ""):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT username FROM users ORDER BY username ASC')
+    if query:
+        cursor.execute('SELECT username FROM users WHERE username LIKE ? ORDER BY username ASC', (f'%{query}%',))
+    else:
+        cursor.execute('SELECT username FROM users ORDER BY username ASC')
     users = [row[0] for row in cursor.fetchall()]
     conn.close()
     return {"users": users}
+
+# ─────────────────────────────────────────────
+# API: Groups
+# ─────────────────────────────────────────────
+class GroupCreateRequest(BaseModel):
+    name: str
+    creator: str
+
+@app.post("/api/groups")
+async def create_group(req: GroupCreateRequest):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO groups (name, creator) VALUES (?, ?)', (req.name, req.creator))
+    group_id = cursor.lastrowid
+    cursor.execute('INSERT INTO group_members (group_id, username) VALUES (?, ?)', (group_id, req.creator))
+    conn.commit()
+    conn.close()
+    return {"id": group_id, "name": req.name}
+
+@app.get("/api/groups")
+async def search_groups(query: str = ""):
+    conn = get_db()
+    cursor = conn.cursor()
+    if query:
+        cursor.execute('SELECT id, name FROM groups WHERE name LIKE ? ORDER BY name ASC', (f'%{query}%',))
+    else:
+        cursor.execute('SELECT id, name FROM groups ORDER BY name ASC')
+    groups = [{"id": row[0], "name": row[1]} for row in cursor.fetchall()]
+    conn.close()
+    return {"groups": groups}
+
+@app.get("/api/groups/user/{username}")
+async def get_user_groups(username: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT g.id, g.name FROM groups g
+        JOIN group_members gm ON g.id = gm.group_id
+        WHERE gm.username = ?
+    ''', (username,))
+    groups = [{"id": row[0], "name": row[1]} for row in cursor.fetchall()]
+    conn.close()
+    return {"groups": groups}
+
+@app.post("/api/groups/{group_id}/join")
+async def join_group(group_id: int, username: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('INSERT INTO group_members (group_id, username) VALUES (?, ?)', (group_id, username))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        pass # Already a member
+    conn.close()
+    return {"message": "Joined group"}
 
 # ─────────────────────────────────────────────
 # API: Messages History
@@ -134,6 +209,14 @@ async def get_messages(user1: str, user2: str):
             ORDER BY timestamp ASC
             LIMIT 200
         ''')
+    elif user2.startswith("GROUP_"):
+        group_id = user2.replace("GROUP_", "")
+        cursor.execute('''
+            SELECT sender, recipient, content, type, timestamp FROM messages
+            WHERE recipient = ?
+            ORDER BY timestamp ASC
+            LIMIT 200
+        ''', (user2,))
     else:
         cursor.execute('''
             SELECT sender, recipient, content, type, timestamp FROM messages
@@ -224,6 +307,16 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
 
                 if recipient == "GLOBAL_ROOM":
                     await manager.broadcast(payload)
+                elif recipient.startswith("GROUP_"):
+                    # Send to all members of the group
+                    group_id = recipient.replace("GROUP_", "")
+                    conn = get_db()
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT username FROM group_members WHERE group_id = ?', (group_id,))
+                    members = [row[0] for row in cursor.fetchall()]
+                    conn.close()
+                    for member in members:
+                        await manager.send_personal_message(payload, member)
                 else:
                     # Send to recipient
                     await manager.send_personal_message(payload, recipient)
